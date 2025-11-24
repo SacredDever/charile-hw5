@@ -4,10 +4,43 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <sys/syscall.h>
 
 #include "trader.h"
 #include "protocol.h"
 #include "debug.h"
+
+/*
+ * Format timestamp from packet header
+ */
+static double format_timestamp(uint32_t sec, uint32_t nsec) {
+    return (double)sec + (double)nsec / 1000000000.0;
+}
+
+/*
+ * Format packet type name
+ */
+static const char *packet_type_name(BRS_PACKET_TYPE type) {
+    switch (type) {
+        case BRS_LOGIN_PKT: return "LOGIN";
+        case BRS_STATUS_PKT: return "STATUS";
+        case BRS_DEPOSIT_PKT: return "DEPOSIT";
+        case BRS_WITHDRAW_PKT: return "WITHDRAW";
+        case BRS_ESCROW_PKT: return "ESCROW";
+        case BRS_RELEASE_PKT: return "RELEASE";
+        case BRS_BUY_PKT: return "BUY";
+        case BRS_SELL_PKT: return "SELL";
+        case BRS_CANCEL_PKT: return "CANCEL";
+        case BRS_ACK_PKT: return "ACK";
+        case BRS_NACK_PKT: return "NACK";
+        case BRS_BOUGHT_PKT: return "BOUGHT";
+        case BRS_SOLD_PKT: return "SOLD";
+        case BRS_POSTED_PKT: return "POSTED";
+        case BRS_CANCELED_PKT: return "CANCELED";
+        case BRS_TRADED_PKT: return "TRADED";
+        default: return "UNKNOWN";
+    }
+}
 
 struct trader {
     int fd;
@@ -128,7 +161,8 @@ TRADER *trader_login(int fd, char *name) {
     trader_map[trader_count].trader = trader;
     trader_count++;
     
-    debug("Trader logged in: %s (fd: %d)", name, fd);
+    debug("Create new trader %p [%s]", trader, name);
+    debug("Increase reference count on trader %p [%s] (0 -> 1) for new trader just logged in", trader, name);
     
     pthread_mutex_unlock(&trader_map_mutex);
     return trader;
@@ -170,8 +204,9 @@ TRADER *trader_ref(TRADER *trader, char *why) {
     }
     
     pthread_mutex_lock(&trader->mutex);
+    int old_refcount = trader->refcount;
     trader->refcount++;
-    debug("trader_ref: %s (refcount: %d) - %s", trader->name, trader->refcount, why);
+    debug("Increase reference count on trader %p [%s] (%d -> %d) for %s", trader, trader->name, old_refcount, trader->refcount, why);
     pthread_mutex_unlock(&trader->mutex);
     
     return trader;
@@ -187,8 +222,9 @@ void trader_unref(TRADER *trader, char *why) {
     
     pthread_mutex_lock(&trader->mutex);
     
+    int old_refcount = trader->refcount;
     trader->refcount--;
-    debug("trader_unref: %s (refcount: %d) - %s", trader->name, trader->refcount, why);
+    debug("Decrease reference count on trader %p [%s] (%d -> %d) for %s", trader, trader->name, old_refcount, trader->refcount, why);
     
     if (trader->refcount < 0) {
         error("trader_unref: refcount went negative for %s", trader->name);
@@ -229,7 +265,27 @@ int trader_send_packet(TRADER *trader, BRS_PACKET_HEADER *pkt, void *data) {
     }
     
     pthread_mutex_lock(&trader->mutex);
+    
+    // Log outgoing packet
+    double timestamp = format_timestamp(ntohl(pkt->timestamp_sec), ntohl(pkt->timestamp_nsec));
+    uint16_t payload_size = ntohs(pkt->size);
+    BRS_PACKET_TYPE type = (BRS_PACKET_TYPE)pkt->type;
+    
+    if (type == BRS_ACK_PKT && data != NULL && payload_size == sizeof(BRS_STATUS_INFO)) {
+        BRS_STATUS_INFO *info = (BRS_STATUS_INFO *)data;
+        debug("=> %.9f: type=ACK, size=%d, balance: %u, inventory: %u, bid: %u, ask: %u, last: %u, order: %u", 
+              timestamp, payload_size, ntohl(info->balance), ntohl(info->inventory), 
+              ntohl(info->bid), ntohl(info->ask), ntohl(info->last), ntohl(info->orderid));
+    } else if (payload_size == 0) {
+        debug("=> %.9f: type=%s, size=0 (no payload)", timestamp, packet_type_name(type));
+    } else {
+        debug("=> %.9f: type=%s, size=%d", timestamp, packet_type_name(type), payload_size);
+    }
+    
     int result = proto_send_packet(trader->fd, pkt, data);
+    debug("%lu: Send packet (clientfd=%d, type=%s) for trader %p [%s]", 
+          (unsigned long)syscall(SYS_gettid), trader->fd, packet_type_name(type), trader, trader->name);
+    
     pthread_mutex_unlock(&trader->mutex);
     
     return result;

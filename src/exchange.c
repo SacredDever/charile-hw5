@@ -72,6 +72,9 @@ EXCHANGE *exchange_init() {
         return NULL;
     }
     
+    debug("Matchmaker for exchange %p starting", xchg);
+    debug("Matchmaker for exchange %p sleeping", xchg);
+    
     return xchg;
 }
 

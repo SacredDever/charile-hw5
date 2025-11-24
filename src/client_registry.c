@@ -84,7 +84,7 @@ int creg_register(CLIENT_REGISTRY *cr, int fd) {
     cr->fds[cr->count] = fd;
     cr->count++;
     
-    debug("Registered client fd %d (count: %d)", fd, cr->count);
+    debug("Register client fd %d (total connected: %d)", fd, cr->count);
     
     pthread_mutex_unlock(&cr->mutex);
     return 0;

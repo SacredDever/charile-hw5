@@ -5,6 +5,8 @@
 #include <errno.h>
 #include <time.h>
 #include <arpa/inet.h>
+#include <sys/syscall.h>
+#include <inttypes.h>
 
 #include "server.h"
 #include "protocol.h"
@@ -15,6 +17,45 @@
 
 extern EXCHANGE *exchange;
 extern CLIENT_REGISTRY *client_registry;
+
+/*
+ * Get current thread ID
+ */
+static inline unsigned long get_thread_id(void) {
+    return syscall(SYS_gettid);
+}
+
+/*
+ * Format timestamp from packet header
+ */
+static double format_timestamp(uint32_t sec, uint32_t nsec) {
+    return (double)sec + (double)nsec / 1000000000.0;
+}
+
+/*
+ * Format packet type name
+ */
+static const char *packet_type_name(BRS_PACKET_TYPE type) {
+    switch (type) {
+        case BRS_LOGIN_PKT: return "LOGIN";
+        case BRS_STATUS_PKT: return "STATUS";
+        case BRS_DEPOSIT_PKT: return "DEPOSIT";
+        case BRS_WITHDRAW_PKT: return "WITHDRAW";
+        case BRS_ESCROW_PKT: return "ESCROW";
+        case BRS_RELEASE_PKT: return "RELEASE";
+        case BRS_BUY_PKT: return "BUY";
+        case BRS_SELL_PKT: return "SELL";
+        case BRS_CANCEL_PKT: return "CANCEL";
+        case BRS_ACK_PKT: return "ACK";
+        case BRS_NACK_PKT: return "NACK";
+        case BRS_BOUGHT_PKT: return "BOUGHT";
+        case BRS_SOLD_PKT: return "SOLD";
+        case BRS_POSTED_PKT: return "POSTED";
+        case BRS_CANCELED_PKT: return "CANCELED";
+        case BRS_TRADED_PKT: return "TRADED";
+        default: return "UNKNOWN";
+    }
+}
 
 /*
  * Thread function for the thread that handles a particular client.
@@ -32,7 +73,7 @@ void *brs_client_service(void *arg) {
     TRADER *trader = NULL;
     int logged_in = 0;
     
-    debug("Client service thread started for fd %d", fd);
+    debug("%lu: [%d] Starting client service", get_thread_id(), fd);
     
     // Main service loop
     while (1) {
@@ -57,8 +98,43 @@ void *brs_client_service(void *arg) {
         // Convert packet type and size from network byte order
         BRS_PACKET_TYPE type = (BRS_PACKET_TYPE)hdr.type;
         uint16_t payload_size = ntohs(hdr.size);
+        double timestamp = format_timestamp(ntohl(hdr.timestamp_sec), ntohl(hdr.timestamp_nsec));
         
-        debug("Received packet type %d from fd %d", type, fd);
+        // Log incoming packet
+        if (type == BRS_LOGIN_PKT && payload != NULL && payload_size > 0) {
+            char *username = malloc(payload_size + 1);
+            memcpy(username, payload, payload_size);
+            username[payload_size] = '\0';
+            debug("<= %.9f: type=%s, size=%d, user: '%s'", timestamp, packet_type_name(type), payload_size, username);
+            free(username);
+        } else if (type == BRS_DEPOSIT_PKT && payload != NULL && payload_size == sizeof(BRS_FUNDS_INFO)) {
+            BRS_FUNDS_INFO *info = (BRS_FUNDS_INFO *)payload;
+            debug("<= %.9f: type=%s, size=%d, amount: %u", timestamp, packet_type_name(type), payload_size, ntohl(info->amount));
+        } else if (type == BRS_WITHDRAW_PKT && payload != NULL && payload_size == sizeof(BRS_FUNDS_INFO)) {
+            BRS_FUNDS_INFO *info = (BRS_FUNDS_INFO *)payload;
+            debug("<= %.9f: type=%s, size=%d, amount: %u", timestamp, packet_type_name(type), payload_size, ntohl(info->amount));
+        } else if (type == BRS_ESCROW_PKT && payload != NULL && payload_size == sizeof(BRS_ESCROW_INFO)) {
+            BRS_ESCROW_INFO *info = (BRS_ESCROW_INFO *)payload;
+            debug("<= %.9f: type=%s, size=%d, quantity: %u", timestamp, packet_type_name(type), payload_size, ntohl(info->quantity));
+        } else if (type == BRS_RELEASE_PKT && payload != NULL && payload_size == sizeof(BRS_ESCROW_INFO)) {
+            BRS_ESCROW_INFO *info = (BRS_ESCROW_INFO *)payload;
+            debug("<= %.9f: type=%s, size=%d, quantity: %u", timestamp, packet_type_name(type), payload_size, ntohl(info->quantity));
+        } else if (type == BRS_BUY_PKT && payload != NULL && payload_size == sizeof(BRS_ORDER_INFO)) {
+            BRS_ORDER_INFO *info = (BRS_ORDER_INFO *)payload;
+            debug("<= %.9f: type=%s, size=%d, quantity: %u, price: %u", timestamp, packet_type_name(type), payload_size, ntohl(info->quantity), ntohl(info->price));
+        } else if (type == BRS_SELL_PKT && payload != NULL && payload_size == sizeof(BRS_ORDER_INFO)) {
+            BRS_ORDER_INFO *info = (BRS_ORDER_INFO *)payload;
+            debug("<= %.9f: type=%s, size=%d, quantity: %u, price: %u", timestamp, packet_type_name(type), payload_size, ntohl(info->quantity), ntohl(info->price));
+        } else if (type == BRS_CANCEL_PKT && payload != NULL && payload_size == sizeof(BRS_CANCEL_INFO)) {
+            BRS_CANCEL_INFO *info = (BRS_CANCEL_INFO *)payload;
+            debug("<= %.9f: type=%s, size=%d, order: %u", timestamp, packet_type_name(type), payload_size, ntohl(info->order));
+        } else if (type == BRS_STATUS_PKT) {
+            debug("<= %.9f: type=%s, size=%d (no payload)", timestamp, packet_type_name(type), payload_size);
+        } else {
+            debug("<= %.9f: type=%s, size=%d", timestamp, packet_type_name(type), payload_size);
+        }
+        
+        debug("%lu: [%d] %s packet received", get_thread_id(), fd, packet_type_name(type));
         
         // Handle LOGIN before login
         if (!logged_in) {
@@ -88,6 +164,7 @@ void *brs_client_service(void *arg) {
                 username[payload_size] = '\0';
                 
                 // Try to login
+                debug("%lu: [%d] Login '%s'", get_thread_id(), fd, username);
                 trader = trader_login(fd, username);
                 free(username);
                 
@@ -101,8 +178,9 @@ void *brs_client_service(void *arg) {
                     clock_gettime(CLOCK_REALTIME, &ts);
                     ack_hdr.timestamp_sec = htonl(ts.tv_sec);
                     ack_hdr.timestamp_nsec = htonl(ts.tv_nsec);
+                    double send_time = format_timestamp(ts.tv_sec, ts.tv_nsec);
                     proto_send_packet(fd, &ack_hdr, NULL);
-                    debug("Client fd %d logged in successfully", fd);
+                    debug("=> %.9f: type=ACK, size=0 (no payload)", send_time);
                 } else {
                     // Send NACK
                     BRS_PACKET_HEADER nack_hdr;
@@ -141,6 +219,7 @@ void *brs_client_service(void *arg) {
                 break;
                 
             case BRS_STATUS_PKT: {
+                debug("%lu: Get status of exchange %p", get_thread_id(), exchange);
                 BRS_STATUS_INFO info;
                 exchange_get_status(exchange, trader_get_account(trader), &info);
                 trader_send_ack(trader, &info);
@@ -158,10 +237,13 @@ void *brs_client_service(void *arg) {
                 BRS_FUNDS_INFO *funds_info = (BRS_FUNDS_INFO *)payload;
                 funds_t amount = ntohl(funds_info->amount);
                 
-                account_increase_balance(trader_get_account(trader), amount);
+                ACCOUNT *account = trader_get_account(trader);
+                account_increase_balance(account, amount);
+                
+                debug("%lu: Get status of exchange %p", get_thread_id(), exchange);
                 
                 BRS_STATUS_INFO info;
-                exchange_get_status(exchange, trader_get_account(trader), &info);
+                exchange_get_status(exchange, account, &info);
                 trader_send_ack(trader, &info);
                 free(payload);
                 break;
@@ -198,10 +280,13 @@ void *brs_client_service(void *arg) {
                 BRS_ESCROW_INFO *escrow_info = (BRS_ESCROW_INFO *)payload;
                 quantity_t quantity = ntohl(escrow_info->quantity);
                 
-                account_increase_inventory(trader_get_account(trader), quantity);
+                ACCOUNT *account = trader_get_account(trader);
+                account_increase_inventory(account, quantity);
+                
+                debug("%lu: Get status of exchange %p", get_thread_id(), exchange);
                 
                 BRS_STATUS_INFO info;
-                exchange_get_status(exchange, trader_get_account(trader), &info);
+                exchange_get_status(exchange, account, &info);
                 trader_send_ack(trader, &info);
                 free(payload);
                 break;

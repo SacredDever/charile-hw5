@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <errno.h>
+#include <sys/syscall.h>
 
 #include "client_registry.h"
 #include "exchange.h"
@@ -69,17 +70,20 @@ int main(int argc, char* argv[]){
     }
 
     // Perform required initializations
+    debug("%lu: Initialize client registry", (unsigned long)syscall(SYS_gettid));
     client_registry = creg_init();
     if (client_registry == NULL) {
         error("Failed to initialize client registry");
         exit(EXIT_FAILURE);
     }
     
+    debug("%lu: Initialize accounts module", (unsigned long)syscall(SYS_gettid));
     if (accounts_init() != 0) {
         error("Failed to initialize accounts");
         terminate(EXIT_FAILURE);
     }
     
+    debug("%lu: Initialize trader module", (unsigned long)syscall(SYS_gettid));
     if (traders_init() != 0) {
         error("Failed to initialize traders");
         terminate(EXIT_FAILURE);
@@ -90,6 +94,7 @@ int main(int argc, char* argv[]){
         error("Failed to initialize exchange");
         terminate(EXIT_FAILURE);
     }
+    debug("Initialized exchange %p", exchange);
 
     // Create listening socket
     listen_fd = socket(AF_INET, SOCK_STREAM, 0);

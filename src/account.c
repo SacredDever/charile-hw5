@@ -104,7 +104,7 @@ ACCOUNT *account_lookup(char *name) {
     account_map[account_count].account = account;
     account_count++;
     
-    debug("Created new account for user: %s", name);
+    debug("Create new account %p [%s]", account, name);
     
     pthread_mutex_unlock(&account_map_mutex);
     return account;
@@ -119,8 +119,21 @@ void account_increase_balance(ACCOUNT *account, funds_t amount) {
     }
     
     pthread_mutex_lock(&account->mutex);
+    funds_t old_balance = account->balance;
     account->balance += amount;
     pthread_mutex_unlock(&account->mutex);
+    
+    // Find account name for debug
+    pthread_mutex_lock(&account_map_mutex);
+    const char *name = "unknown";
+    for (int i = 0; i < account_count; i++) {
+        if (account_map[i].account == account) {
+            name = account_map[i].name;
+            break;
+        }
+    }
+    debug("Increase balance of account '%s' (%u -> %u)", name, old_balance, account->balance);
+    pthread_mutex_unlock(&account_map_mutex);
 }
 
 /*
@@ -152,8 +165,21 @@ void account_increase_inventory(ACCOUNT *account, quantity_t quantity) {
     }
     
     pthread_mutex_lock(&account->mutex);
+    quantity_t old_inventory = account->inventory;
     account->inventory += quantity;
     pthread_mutex_unlock(&account->mutex);
+    
+    // Find account name for debug
+    pthread_mutex_lock(&account_map_mutex);
+    const char *name = "unknown";
+    for (int i = 0; i < account_count; i++) {
+        if (account_map[i].account == account) {
+            name = account_map[i].name;
+            break;
+        }
+    }
+    debug("Increase inventory of account '%s' (%u -> %u)", name, old_inventory, account->inventory);
+    pthread_mutex_unlock(&account_map_mutex);
 }
 
 /*
@@ -199,4 +225,3 @@ void account_get_status(ACCOUNT *account, BRS_STATUS_INFO *infop) {
     
     pthread_mutex_unlock(&account->mutex);
 }
-
