@@ -20,6 +20,14 @@
 extern EXCHANGE *exchange;
 extern CLIENT_REGISTRY *client_registry;
 
+/*
+ * Debug macro with thread ID format (matching demo_server)
+ */
+#define debug_thread(S, ...) \
+    do { \
+        fprintf(stderr, KMAG "DEBUG: %lu: " KNRM S NL, (unsigned long)syscall(SYS_gettid), ##__VA_ARGS__); \
+    } while (0)
+
 static volatile sig_atomic_t shutdown_flag = 0;
 static int listen_fd = -1;
 
@@ -70,20 +78,20 @@ int main(int argc, char* argv[]){
     }
 
     // Perform required initializations
-    debug("%lu: Initialize client registry", (unsigned long)syscall(SYS_gettid));
+    debug_thread("Initialize client registry");
     client_registry = creg_init();
     if (client_registry == NULL) {
         error("Failed to initialize client registry");
         exit(EXIT_FAILURE);
     }
     
-    debug("%lu: Initialize accounts module", (unsigned long)syscall(SYS_gettid));
+    debug_thread("Initialize accounts module");
     if (accounts_init() != 0) {
         error("Failed to initialize accounts");
         terminate(EXIT_FAILURE);
     }
     
-    debug("%lu: Initialize trader module", (unsigned long)syscall(SYS_gettid));
+    debug_thread("Initialize trader module");
     if (traders_init() != 0) {
         error("Failed to initialize traders");
         terminate(EXIT_FAILURE);
@@ -94,7 +102,7 @@ int main(int argc, char* argv[]){
         error("Failed to initialize exchange");
         terminate(EXIT_FAILURE);
     }
-    debug("Initialized exchange %p", exchange);
+    debug_thread("Initialized exchange %p", exchange);
 
     // Create listening socket
     listen_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -200,9 +208,9 @@ static void terminate(int status) {
     // This will trigger the eventual termination of service threads.
     creg_shutdown_all(client_registry);
     
-    debug("Waiting for service threads to terminate...");
+    debug_thread("Waiting for service threads to terminate...");
     creg_wait_for_empty(client_registry);
-    debug("All service threads terminated.");
+    debug_thread("All service threads terminated.");
 
     // Finalize modules.
     creg_fini(client_registry);
@@ -210,6 +218,6 @@ static void terminate(int status) {
     traders_fini();
     accounts_fini();
 
-    debug("Bourse server terminating");
+    debug_thread("Bourse server terminating");
     exit(status);
 }

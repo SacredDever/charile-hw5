@@ -4,11 +4,20 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <unistd.h>
 #include <sys/syscall.h>
 
 #include "trader.h"
 #include "protocol.h"
 #include "debug.h"
+
+/*
+ * Debug macro with thread ID format (matching demo_server)
+ */
+#define debug_thread(S, ...) \
+    do { \
+        fprintf(stderr, KMAG "DEBUG: %lu: " KNRM S NL, (unsigned long)syscall(SYS_gettid), ##__VA_ARGS__); \
+    } while (0)
 
 /*
  * Format timestamp from packet header
@@ -161,8 +170,8 @@ TRADER *trader_login(int fd, char *name) {
     trader_map[trader_count].trader = trader;
     trader_count++;
     
-    debug("Create new trader %p [%s]", trader, name);
-    debug("Increase reference count on trader %p [%s] (0 -> 1) for new trader just logged in", trader, name);
+    debug_thread("Create new trader %p [%s]", trader, name);
+    debug_thread("Increase reference count on trader %p [%s] (0 -> 1) for new trader just logged in", trader, name);
     
     pthread_mutex_unlock(&trader_map_mutex);
     return trader;
@@ -206,7 +215,7 @@ TRADER *trader_ref(TRADER *trader, char *why) {
     pthread_mutex_lock(&trader->mutex);
     int old_refcount = trader->refcount;
     trader->refcount++;
-    debug("Increase reference count on trader %p [%s] (%d -> %d) for %s", trader, trader->name, old_refcount, trader->refcount, why);
+    debug_thread("Increase reference count on trader %p [%s] (%d -> %d) for %s", trader, trader->name, old_refcount, trader->refcount, why);
     pthread_mutex_unlock(&trader->mutex);
     
     return trader;
@@ -224,7 +233,7 @@ void trader_unref(TRADER *trader, char *why) {
     
     int old_refcount = trader->refcount;
     trader->refcount--;
-    debug("Decrease reference count on trader %p [%s] (%d -> %d) for %s", trader, trader->name, old_refcount, trader->refcount, why);
+    debug_thread("Decrease reference count on trader %p [%s] (%d -> %d) for %s", trader, trader->name, old_refcount, trader->refcount, why);
     
     if (trader->refcount < 0) {
         error("trader_unref: refcount went negative for %s", trader->name);
@@ -273,18 +282,18 @@ int trader_send_packet(TRADER *trader, BRS_PACKET_HEADER *pkt, void *data) {
     
     if (type == BRS_ACK_PKT && data != NULL && payload_size == sizeof(BRS_STATUS_INFO)) {
         BRS_STATUS_INFO *info = (BRS_STATUS_INFO *)data;
-        debug("=> %.9f: type=ACK, size=%d, balance: %u, inventory: %u, bid: %u, ask: %u, last: %u, order: %u", 
+        debug_thread("=> %.9f: type=ACK, size=%d, balance: %u, inventory: %u, bid: %u, ask: %u, last: %u, order: %u", 
               timestamp, payload_size, ntohl(info->balance), ntohl(info->inventory), 
               ntohl(info->bid), ntohl(info->ask), ntohl(info->last), ntohl(info->orderid));
     } else if (payload_size == 0) {
-        debug("=> %.9f: type=%s, size=0 (no payload)", timestamp, packet_type_name(type));
+        debug_thread("=> %.9f: type=%s, size=0 (no payload)", timestamp, packet_type_name(type));
     } else {
-        debug("=> %.9f: type=%s, size=%d", timestamp, packet_type_name(type), payload_size);
+        debug_thread("=> %.9f: type=%s, size=%d", timestamp, packet_type_name(type), payload_size);
     }
     
     int result = proto_send_packet(trader->fd, pkt, data);
-    debug("%lu: Send packet (clientfd=%d, type=%s) for trader %p [%s]", 
-          (unsigned long)syscall(SYS_gettid), trader->fd, packet_type_name(type), trader, trader->name);
+    debug_thread("Send packet (clientfd=%d, type=%s) for trader %p [%s]", 
+                 trader->fd, packet_type_name(type), trader, trader->name);
     
     pthread_mutex_unlock(&trader->mutex);
     

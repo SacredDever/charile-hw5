@@ -5,6 +5,16 @@
 
 #include "account.h"
 #include "debug.h"
+#include <unistd.h>
+#include <sys/syscall.h>
+
+/*
+ * Debug macro with thread ID format (matching demo_server)
+ */
+#define debug_thread(S, ...) \
+    do { \
+        fprintf(stderr, KMAG "DEBUG: %lu: " KNRM S NL, (unsigned long)syscall(SYS_gettid), ##__VA_ARGS__); \
+    } while (0)
 
 struct account {
     funds_t balance;
@@ -104,7 +114,7 @@ ACCOUNT *account_lookup(char *name) {
     account_map[account_count].account = account;
     account_count++;
     
-    debug("Create new account %p [%s]", account, name);
+    debug_thread("Create new account %p [%s]", account, name);
     
     pthread_mutex_unlock(&account_map_mutex);
     return account;
@@ -132,7 +142,7 @@ void account_increase_balance(ACCOUNT *account, funds_t amount) {
             break;
         }
     }
-    debug("Increase balance of account '%s' (%u -> %u)", name, old_balance, account->balance);
+    debug_thread("Increase balance of account '%s' (%u -> %u)", name, old_balance, account->balance);
     pthread_mutex_unlock(&account_map_mutex);
 }
 
@@ -178,7 +188,7 @@ void account_increase_inventory(ACCOUNT *account, quantity_t quantity) {
             break;
         }
     }
-    debug("Increase inventory of account '%s' (%u -> %u)", name, old_inventory, account->inventory);
+    debug_thread("Increase inventory of account '%s' (%u -> %u)", name, old_inventory, account->inventory);
     pthread_mutex_unlock(&account_map_mutex);
 }
 

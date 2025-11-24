@@ -7,6 +7,15 @@
 
 #include "client_registry.h"
 #include "debug.h"
+#include <sys/syscall.h>
+
+/*
+ * Debug macro with thread ID format (matching demo_server)
+ */
+#define debug_thread(S, ...) \
+    do { \
+        fprintf(stderr, KMAG "DEBUG: %lu: " KNRM S NL, (unsigned long)syscall(SYS_gettid), ##__VA_ARGS__); \
+    } while (0)
 
 #define MAX_CLIENTS 1024
 
@@ -84,7 +93,7 @@ int creg_register(CLIENT_REGISTRY *cr, int fd) {
     cr->fds[cr->count] = fd;
     cr->count++;
     
-    debug("Register client fd %d (total connected: %d)", fd, cr->count);
+    debug_thread("Register client fd %d (total connected: %d)", fd, cr->count);
     
     pthread_mutex_unlock(&cr->mutex);
     return 0;
@@ -118,7 +127,7 @@ int creg_unregister(CLIENT_REGISTRY *cr, int fd) {
         return -1;
     }
     
-    debug("Unregistered client fd %d (count: %d)", fd, cr->count);
+    debug_thread("Unregistered client fd %d (count: %d)", fd, cr->count);
     
     // If count reached zero, signal the semaphore
     if (cr->count == 0) {
@@ -161,7 +170,7 @@ void creg_shutdown_all(CLIENT_REGISTRY *cr) {
     
     pthread_mutex_lock(&cr->mutex);
     
-    debug("Shutting down %d client connections", cr->count);
+    debug_thread("Shutting down %d client connections", cr->count);
     
     // Shutdown all registered fds
     for (int i = 0; i < cr->count; i++) {

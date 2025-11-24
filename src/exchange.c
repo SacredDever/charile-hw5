@@ -8,6 +8,16 @@
 #include "exchange.h"
 #include "protocol.h"
 #include "debug.h"
+#include <unistd.h>
+#include <sys/syscall.h>
+
+/*
+ * Debug macro with thread ID format (matching demo_server)
+ */
+#define debug_thread(S, ...) \
+    do { \
+        fprintf(stderr, KMAG "DEBUG: %lu: " KNRM S NL, (unsigned long)syscall(SYS_gettid), ##__VA_ARGS__); \
+    } while (0)
 
 #define MAX_ORDERS 1024
 
@@ -72,8 +82,8 @@ EXCHANGE *exchange_init() {
         return NULL;
     }
     
-    debug("Matchmaker for exchange %p starting", xchg);
-    debug("Matchmaker for exchange %p sleeping", xchg);
+    debug_thread("Matchmaker for exchange %p starting", xchg);
+    debug_thread("Matchmaker for exchange %p sleeping", xchg);
     
     return xchg;
 }
