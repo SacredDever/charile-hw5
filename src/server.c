@@ -31,7 +31,7 @@ static inline unsigned long get_thread_id(void) {
  */
 #define debug_thread(S, ...) \
     do { \
-        fprintf(stderr, KMAG "DEBUG: %lu: " KNRM S NL, get_thread_id(), ##__VA_ARGS__); \
+        fprintf(stderr, KMAG "DEBUG: %015lu: " KNRM S NL, get_thread_id(), ##__VA_ARGS__); \
     } while (0)
 
 /*

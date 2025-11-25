@@ -25,7 +25,12 @@ extern CLIENT_REGISTRY *client_registry;
  */
 #define debug_thread(S, ...) \
     do { \
-        fprintf(stderr, KMAG "DEBUG: %lu: " KNRM S NL, (unsigned long)syscall(SYS_gettid), ##__VA_ARGS__); \
+        fprintf(stderr, KMAG "DEBUG: %015lu: " KNRM S NL, (unsigned long)syscall(SYS_gettid), ##__VA_ARGS__); \
+    } while (0)
+
+#define debug_thread_no(S, ...) \
+    do { \
+        fprintf(stderr, KMAG "DEBUG: " KNRM S NL, ##__VA_ARGS__); \
     } while (0)
 
 static volatile sig_atomic_t shutdown_flag = 0;
@@ -102,7 +107,7 @@ int main(int argc, char* argv[]){
         error("Failed to initialize exchange");
         terminate(EXIT_FAILURE);
     }
-    debug_thread("Initialized exchange %p", exchange);
+    debug_thread_no("Initialized exchange %p", exchange);
 
     // Create listening socket
     listen_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -139,7 +144,7 @@ int main(int argc, char* argv[]){
         terminate(EXIT_FAILURE);
     }
 
-    info("Bourse server listening on port %d", port);
+    debug_thread("Bourse server listening on port %d", port);
 
     // Accept loop
     while (!shutdown_flag) {

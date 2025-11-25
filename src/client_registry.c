@@ -14,7 +14,7 @@
  */
 #define debug_thread(S, ...) \
     do { \
-        fprintf(stderr, KMAG "DEBUG: %lu: " KNRM S NL, (unsigned long)syscall(SYS_gettid), ##__VA_ARGS__); \
+        fprintf(stderr, KMAG "DEBUG: %015lu: " KNRM S NL, (unsigned long)syscall(SYS_gettid), ##__VA_ARGS__); \
     } while (0)
 
 #define MAX_CLIENTS 1024
