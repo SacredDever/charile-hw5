@@ -83,7 +83,6 @@ EXCHANGE *exchange_init() {
     }
     
     debug_thread("Matchmaker for exchange %p starting", xchg);
-    debug_thread("Matchmaker for exchange %p sleeping", xchg);
     
     return xchg;
 }
@@ -205,18 +204,27 @@ static void *matchmaker_thread_func(void *arg) {
         pthread_mutex_lock(&xchg->mutex);
         
         // Match orders until no more matches
+        int trades_made = 0;
         while (1) {
             struct order *buy_order = find_best_buy(xchg);
             struct order *sell_order = find_best_sell(xchg);
             
             // Check if orders match
             if (buy_order == NULL || sell_order == NULL) {
+                if (!trades_made) {
+                    debug_thread("Matchmaker sees no possible trades");
+                }
                 break;
             }
             
             if (buy_order->price < sell_order->price) {
+                if (!trades_made) {
+                    debug_thread("Matchmaker sees no possible trades");
+                }
                 break; // No match
             }
+            
+            trades_made = 1;
             
             // Determine trade price (closest to last trade price within overlap)
             funds_t trade_price;
@@ -335,6 +343,7 @@ static void *matchmaker_thread_func(void *arg) {
         }
         
         pthread_mutex_unlock(&xchg->mutex);
+        debug_thread("Matchmaker for exchange %p sleeping", xchg);
     }
     
     return NULL;
@@ -369,6 +378,61 @@ void exchange_get_status(EXCHANGE *xchg, ACCOUNT *account, BRS_STATUS_INFO *info
 }
 
 /*
+ * Print order book dump (helper function)
+ */
+static void print_order_book(EXCHANGE *xchg) {
+    fprintf(stderr, "Last trade price: %u\n", xchg->last_trade_price);
+    fprintf(stderr, "\nBuy orders:\n");
+    
+    struct order *order = xchg->buy_orders;
+    if (order == NULL) {
+        fprintf(stderr, "\n");
+    } else {
+        while (order != NULL) {
+            ACCOUNT *account = trader_get_account(order->trader);
+            fprintf(stderr, "[id: %u, trader: %p, account: %p, type: %d, quant: %u, price: %u]\n",
+                    order->id, order->trader, account, order->type, order->quantity, order->price);
+            order = order->next;
+        }
+    }
+    
+    fprintf(stderr, "\nSell orders:\n");
+    order = xchg->sell_orders;
+    if (order == NULL) {
+        fprintf(stderr, "\n");
+    } else {
+        while (order != NULL) {
+            ACCOUNT *account = trader_get_account(order->trader);
+            fprintf(stderr, "[id: %u, trader: %p, account: %p, type: %d, quant: %u, price: %u]\n",
+                    order->id, order->trader, account, order->type, order->quantity, order->price);
+            order = order->next;
+        }
+    }
+    
+    // Count orders and quantities
+    int buy_count = 0;
+    quantity_t buy_qty = 0;
+    order = xchg->buy_orders;
+    while (order != NULL) {
+        buy_count++;
+        buy_qty += order->quantity;
+        order = order->next;
+    }
+    
+    int sell_count = 0;
+    quantity_t sell_qty = 0;
+    order = xchg->sell_orders;
+    while (order != NULL) {
+        sell_count++;
+        sell_qty += order->quantity;
+        order = order->next;
+    }
+    
+    fprintf(stderr, "\nBuy orders: %d, quantity for purchase: %u\n", buy_count, buy_qty);
+    fprintf(stderr, "Sell orders: %d, quantity for sale: %u\n", sell_count, sell_qty);
+}
+
+/*
  * Post a buy order on the exchange.
  */
 orderid_t exchange_post_buy(EXCHANGE *xchg, TRADER *trader, quantity_t quantity, funds_t price) {
@@ -399,7 +463,7 @@ orderid_t exchange_post_buy(EXCHANGE *xchg, TRADER *trader, quantity_t quantity,
     }
     
     order->id = xchg->next_order_id++;
-    order->trader = trader_ref(trader, "buy order");
+    order->trader = trader_ref(trader, "to place in new order");
     order->type = ORDER_BUY;
     order->quantity = quantity;
     order->price = price;
@@ -407,6 +471,11 @@ orderid_t exchange_post_buy(EXCHANGE *xchg, TRADER *trader, quantity_t quantity,
     xchg->buy_orders = order;
     
     orderid_t order_id = order->id;
+    
+    // Print exchange posting message and order book
+    debug_thread("Exchange %p posting buy order %u for trader %p, quantity %u, max price %u",
+                 xchg, order_id, trader, quantity, price);
+    print_order_book(xchg);
     
     pthread_mutex_unlock(&xchg->mutex);
     

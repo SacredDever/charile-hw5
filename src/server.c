@@ -350,28 +350,16 @@ void *brs_client_service(void *arg) {
                 quantity_t quantity = ntohl(order_info->quantity);
                 funds_t price = ntohl(order_info->price);
                 
-                debug_thread("brs_buy: quantity: %u, limit: %u", quantity, price);
+                debug_thread("brs buy: quantity: %u, limit: %u", quantity, price);
                 
                 ACCOUNT *account = trader_get_account(trader);
-                // Check balance before posting
-                BRS_STATUS_INFO temp_info;
-                account_get_status(account, &temp_info);
-                funds_t balance = ntohl(temp_info.balance);
-                funds_t debit_amount = quantity * price;
-                
                 orderid_t order_id = exchange_post_buy(exchange, trader, quantity, price);
                 
                 if (order_id == 0) {
-                    debug_thread("Account '%s' balance %u is less than debit amount %u", trader_username ? trader_username : "unknown", balance, debit_amount);
                     trader_send_nack(trader);
                 } else {
-                    debug_thread("Get status of exchange %p", exchange);
-                    BRS_STATUS_INFO info;
-                    exchange_get_status(exchange, account, &info);
-                    info.orderid = htonl(order_id);
-                    trader_send_ack(trader, &info);
-                    
-                    // Broadcast POSTED notification after ACK
+                    // Broadcast POSTED notification before ACK
+                    debug_thread("Attempt to broadcast");
                     BRS_PACKET_HEADER hdr;
                     struct timespec ts;
                     clock_gettime(CLOCK_REALTIME, &ts);
@@ -385,6 +373,12 @@ void *brs_client_service(void *arg) {
                     notify.quantity = htonl(quantity);
                     notify.price = htonl(price);
                     trader_broadcast_packet(&hdr, &notify);
+                    
+                    debug_thread("Get status of exchange %p", exchange);
+                    BRS_STATUS_INFO info;
+                    exchange_get_status(exchange, account, &info);
+                    info.orderid = htonl(order_id);
+                    trader_send_ack(trader, &info);
                 }
                 free(payload);
                 break;

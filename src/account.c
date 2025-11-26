@@ -157,8 +157,22 @@ int account_decrease_balance(ACCOUNT *account, funds_t amount) {
     pthread_mutex_lock(&account->mutex);
     
     if (account->balance >= amount) {
+        funds_t old_balance = account->balance;
         account->balance -= amount;
         pthread_mutex_unlock(&account->mutex);
+        
+        // Find account name for debug
+        pthread_mutex_lock(&account_map_mutex);
+        const char *name = "unknown";
+        for (int i = 0; i < account_count; i++) {
+            if (account_map[i].account == account) {
+                name = account_map[i].name;
+                break;
+            }
+        }
+        debug_thread("Account %s: decrease balance (%u -> %u)", name, old_balance, account->balance);
+        pthread_mutex_unlock(&account_map_mutex);
+        
         return 0;
     }
     
