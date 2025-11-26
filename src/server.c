@@ -189,16 +189,7 @@ void *brs_client_service(void *arg) {
                 
                 if (trader != NULL) {
                     // Send ACK
-                    BRS_PACKET_HEADER ack_hdr;
-                    ack_hdr.type = BRS_ACK_PKT;
-                    ack_hdr.size = 0;
-                    struct timespec ts;
-                    clock_gettime(CLOCK_REALTIME, &ts);
-                    ack_hdr.timestamp_sec = htonl(ts.tv_sec);
-                    ack_hdr.timestamp_nsec = htonl(ts.tv_nsec);
-                    double send_time = format_timestamp(ts.tv_sec, ts.tv_nsec);
-                    proto_send_packet(fd, &ack_hdr, NULL);
-                    debug_thread("=> %.9f: type=ACK, size=0 (no payload)", send_time);
+                    trader_send_ack(trader, NULL);
                 } else {
                     // Send NACK
                     BRS_PACKET_HEADER nack_hdr;

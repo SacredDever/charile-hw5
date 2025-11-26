@@ -280,6 +280,9 @@ int trader_send_packet(TRADER *trader, BRS_PACKET_HEADER *pkt, void *data) {
     uint16_t payload_size = ntohs(pkt->size);
     BRS_PACKET_TYPE type = (BRS_PACKET_TYPE)pkt->type;
     
+    debug_thread("Send packet (clientfd=%d, type=%s) for trader %p [%s]", 
+                 trader->fd, packet_type_name(type), trader, trader->name);
+    
     if (type == BRS_ACK_PKT && data != NULL && payload_size == sizeof(BRS_STATUS_INFO)) {
         BRS_STATUS_INFO *info = (BRS_STATUS_INFO *)data;
         debug_thread("=> %.9f: type=ACK, size=%d, balance: %u, inventory: %u, bid: %u, ask: %u, last: %u, order: %u", 
@@ -292,8 +295,6 @@ int trader_send_packet(TRADER *trader, BRS_PACKET_HEADER *pkt, void *data) {
     }
     
     int result = proto_send_packet(trader->fd, pkt, data);
-    debug_thread("Send packet (clientfd=%d, type=%s) for trader %p [%s]", 
-                 trader->fd, packet_type_name(type), trader, trader->name);
     
     pthread_mutex_unlock(&trader->mutex);
     
